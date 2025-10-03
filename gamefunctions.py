@@ -4,12 +4,16 @@ import random
 
 
 def print_welcome(name, width):
-    """Prints a centered welcome message for the given name."""
+    """Takes a name and a total width, and prints a welcome message
+    centered within that width.
+    """
     message = f"Hello, {name}!"
-    print(f"'{message.center(width)}'")
+    print(message.center(width))
 
 def print_shop_menu(item1Name, item1Price, item2Name, item2Price):
-    """Prints a formatted shop menu with two items and their prices."""
+    """Takes two items and their prices, and prints them in a formatted
+    shop menu with a border.
+    """
     print("/----------------------\\")
     
     price1_str = f"${item1Price:.2f}"
@@ -23,7 +27,10 @@ def print_shop_menu(item1Name, item1Price, item2Name, item2Price):
     print("\\----------------------/")
 
 def purchase_item(itemPrice, startingMoney, quantityToPurchase=1):
-    """Calculates items purchased and money remaining based on price and budget."""
+    """Calculates how many items can be bought with a given amount of money.
+    It returns a tuple containing the number of items purchased and the
+    money remaining.
+    """
     if itemPrice <= 0:
         num_purchased = 0
     else:
@@ -36,7 +43,9 @@ def purchase_item(itemPrice, startingMoney, quantityToPurchase=1):
     return num_purchased, money_remaining
 
 def new_random_monster():
-    """Creates a dictionary representing a random monster with varied stats."""
+    """Creates a dictionary for a random monster with stats like health and
+    power, and then returns that dictionary.
+    """
     monster_types = [
         {
             "name": "Goblin",

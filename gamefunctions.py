@@ -1,4 +1,4 @@
-# gamefunctions.py by Antonio Rojo
+# gamefunctions.py by Antonio Rojo (modified to add WanderingMonster support)
 
 """
 Adventure module utilities.
@@ -8,8 +8,7 @@ Provides small helper functions for a simple text adventure:
 - print_shop_menu
 - purchase_item
 - new_random_monster
-
-Intended to be imported by game.py.
+- run_map (now supports multiple persistent wandering monsters)
 """
 
 import random
@@ -61,7 +60,7 @@ def purchase_item(itemPrice, startingMoney, quantityToPurchase=1):
 
 
 def new_random_monster():
-    """Create a random monster with simple stats."""
+    """Create a random monster with simple stats (returns a simple dict)."""
     monster_types = [
         {
             "name": "Goblin",
@@ -216,17 +215,139 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
     return player_hp, player_gold
 
 
+# -------------------
+# Wandering monster support
+# -------------------
+class WanderingMonster:
+    """Simple class to represent a wandering monster on the grid."""
+
+    TYPE_COLORS = {
+        "Goblin": (0, 200, 0),
+        "Orc": (180, 20, 20),
+        "Vulture": (200, 200, 0),
+    }
+
+    def __init__(self, x, y, template=None):
+        # template can be the dict returned by new_random_monster()
+        if template is None:
+            template = new_random_monster()
+        self.name = template.get("name", "Monster")
+        self.description = template.get("description", "")
+        self.health = int(template.get("health", 10))
+        self.power = int(template.get("power", 2))
+        self.money = int(template.get("money", 0))
+        self.x = x
+        self.y = y
+        self.alive = True
+        self.color = self.TYPE_COLORS.get(self.name, (255, 255, 255))
+
+    def to_dict(self):
+        """Return a serializable dict for persistence in map_state."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "health": self.health,
+            "power": self.power,
+            "money": self.money,
+            "pos": [self.x, self.y],
+            "alive": self.alive,
+            "color": list(self.color),
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        m = cls(0, 0, template={
+            "name": d.get("name"),
+            "description": d.get("description", ""),
+            "health_range": (d.get("health", 1), d.get("health", 1)),
+            "power_range": (d.get("power", 1), d.get("power", 1)),
+            "money_range": (d.get("money", 0), d.get("money", 0)),
+        })
+        # overwrite fields to match the dict
+        pos = d.get("pos", [0, 0])
+        m.x, m.y = pos[0], pos[1]
+        m.health = int(d.get("health", m.health))
+        m.power = int(d.get("power", m.power))
+        m.money = int(d.get("money", m.money))
+        m.alive = bool(d.get("alive", True))
+        m.color = tuple(d.get("color", list(m.color)))
+        return m
+
+    def move(self, grid_size, town_pos, occupied_positions=None):
+        """Attempt to move the monster one cell in a random direction.
+        Will not move into the town square. occupied_positions is a set of (x,y) tuples to avoid."""
+        if not self.alive:
+            return
+        if occupied_positions is None:
+            occupied_positions = set()
+
+        directions = [(0, -1), (0, 1), (-1, 0), (1, 0),
+                      (0, 0)]  # allow staying still
+        random.shuffle(directions)
+        for dx, dy in directions:
+            nx = self.x + dx
+            ny = self.y + dy
+            # valid
+            if 0 <= nx < grid_size and 0 <= ny < grid_size:
+                if [nx, ny] == list(town_pos):
+                    continue
+                if (nx, ny) in occupied_positions:
+                    continue
+                # adopt new position
+                self.x = nx
+                self.y = ny
+                return
+
+
+def _spawn_two_monsters(player_pos, town_pos, existing_positions=None):
+    """Helper to create two WanderingMonster instances in random positions not on player/town."""
+    monsters = []
+    existing_positions = existing_positions or set()
+    attempts = 0
+    while len(monsters) < 2 and attempts < 200:
+        attempts += 1
+        x = random.randrange(GRID_SIZE)
+        y = random.randrange(GRID_SIZE)
+        if [x, y] == list(player_pos) or [x, y] == list(town_pos):
+            continue
+        if (x, y) in existing_positions:
+            continue
+        # create monster
+        wm = WanderingMonster(x, y)
+        monsters.append(wm)
+        existing_positions.add((x, y))
+    # fallback: if we couldn't find distinct places, place deterministically
+    while len(monsters) < 2:
+        x = (player_pos[0] + len(monsters) + 2) % GRID_SIZE
+        y = (player_pos[1] + len(monsters) + 2) % GRID_SIZE
+        if [x, y] != list(town_pos):
+            monsters.append(WanderingMonster(x, y))
+    return monsters
+
+
 def run_map(map_state):
-    # pygame map loop
+    """Pygame map loop: now supports multiple persistent wandering monsters stored in map_state['monsters']."""
     pygame.init()
     screen = pygame.display.set_mode(WINDOW_SIZE)
     pygame.display.set_caption("World Map")
     clock = pygame.time.Clock()
 
+    # load persisted state (or defaults)
     player_x, player_y = map_state.get("player_pos", [0, 0])
     town_x, town_y = map_state.get("town_pos", [0, 0])
-    monster_x, monster_y = map_state.get("monster_pos", [5, 5])
-    monster_alive = map_state.get("monster_alive", True)
+
+    # load monsters list from map_state if present
+    monsters_data = map_state.get("monsters")
+    monsters = []
+    if monsters_data:
+        for d in monsters_data:
+            monsters.append(WanderingMonster.from_dict(d))
+    else:
+        # spawn two monsters on first visit
+        monsters = _spawn_two_monsters([player_x, player_y], [town_x, town_y])
+
+    # track how many player moves have happened so we move monsters every other player move
+    player_moves = 0
 
     result = None
     running = True
@@ -252,12 +373,55 @@ def run_map(map_state):
                     new_y = player_y + dy
                     if 0 <= new_x < GRID_SIZE and 0 <= new_y < GRID_SIZE:
                         player_x, player_y = new_x, new_y
+
+                        # if entered town
                         if [player_x, player_y] == [town_x, town_y]:
                             result = "town"
                             running = False
-                        elif monster_alive and [player_x, player_y] == [monster_x, monster_y]:
+                            break
+
+                        # check if player stepped onto any alive monster
+                        stepped_monster = None
+                        for m in monsters:
+                            if m.alive and [m.x, m.y] == [player_x, player_y]:
+                                stepped_monster = m
+                                break
+                        if stepped_monster:
+                            # place the monster dict in map_state so game.py can fight the exact monster
+                            map_state["pending_monster"] = stepped_monster.to_dict()
                             result = "monster"
                             running = False
+                            break
+
+                        # otherwise, player moved successfully; increment move counter and possibly move monsters
+                        player_moves += 1
+                        if player_moves % 2 == 0:
+                            # collect occupied positions to avoid monsters stacking on each other or on town
+                            occupied = set()
+                            for m in monsters:
+                                if m.alive:
+                                    occupied.add((m.x, m.y))
+                            # monsters attempt to move
+                            new_positions = set()
+                            for m in monsters:
+                                # remove its own position to allow movement
+                                if (m.x, m.y) in occupied:
+                                    occupied.remove((m.x, m.y))
+                                m.move(GRID_SIZE, [town_x, town_y],
+                                       occupied_positions=occupied)
+                                new_positions.add((m.x, m.y))
+                                # re-add to occupied so others won't collide
+                                occupied.add((m.x, m.y))
+
+                            # if any monster moved onto the player, initiate combat next loop iteration:
+                            for m in monsters:
+                                if m.alive and [m.x, m.y] == [player_x, player_y]:
+                                    map_state["pending_monster"] = m.to_dict()
+                                    result = "monster"
+                                    running = False
+                                    break
+                            if not running:
+                                break
 
         # draw background
         screen.fill((0, 0, 0))
@@ -275,12 +439,22 @@ def run_map(map_state):
         pygame.draw.circle(screen, (0, 255, 0),
                            town_rect.center, CELL_SIZE // 3)
 
-        # draw monster if alive
-        if monster_alive:
-            monster_rect = pygame.Rect(monster_x * CELL_SIZE, monster_y *
-                                       CELL_SIZE, CELL_SIZE, CELL_SIZE)
-            pygame.draw.circle(screen, (255, 0, 0),
-                               monster_rect.center, CELL_SIZE // 3)
+        # draw monsters if alive
+        any_alive = False
+        for m in monsters:
+            if m.alive:
+                any_alive = True
+                monster_rect = pygame.Rect(m.x * CELL_SIZE, m.y *
+                                           CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                # color stored as tuple, pygame wants tuple
+                pygame.draw.circle(screen, tuple(m.color),
+                                   monster_rect.center, CELL_SIZE // 3)
+
+        # respawn two monsters if none are alive
+        if not any_alive:
+            # spawn two new monsters, ensure they don't appear on player or town
+            monsters = _spawn_two_monsters(
+                [player_x, player_y], [town_x, town_y])
 
         # draw player
         player_rect = pygame.Rect(player_x * CELL_SIZE, player_y *
@@ -292,9 +466,11 @@ def run_map(map_state):
 
     pygame.quit()
 
+    # persist monster state back to map_state
     map_state["player_pos"] = [player_x, player_y]
     map_state["town_pos"] = [town_x, town_y]
-    map_state["monster_pos"] = [monster_x, monster_y]
-    map_state["monster_alive"] = monster_alive
+    map_state["monsters"] = [m.to_dict() for m in monsters]
+    # pending_monster may hold the one the player walked into (as dict) - keep it for the caller
+    # map_state["pending_monster"] is set earlier when stepping on a monster
 
     return result, map_state

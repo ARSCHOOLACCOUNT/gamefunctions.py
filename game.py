@@ -23,7 +23,9 @@ def create_default_map_state():
     return {
         "player_pos": [0, 0],
         "town_pos": [0, 0],
-        "monster_pos": [5, 5],
+        # legacy single-monster keys are replaced by 'monsters' list persisted by run_map
+        # keep a placeholder to avoid errors loading older saves
+        "monsters": None,
         "monster_alive": True,
     }
 
@@ -136,13 +138,30 @@ def main():
             while True:
                 action, map_state = run_map(map_state)
 
-                if action == "monster" and map_state.get("monster_alive", True):
+                if action == "monster":
+                    # run_map stores the exact monster dict under map_state["pending_monster"]
+                    pending = map_state.get("pending_monster")
+                    monster_for_fight = pending if pending else new_random_monster()
+
                     before_gold = money
                     hp, money = fight_monster(
-                        hp, money, new_random_monster(), inventory, equipped_weapon
+                        hp, money, monster_for_fight, inventory, equipped_weapon
                     )
+
+                    # if we gained gold, assume the monster was defeated and mark it dead in the map_state
                     if money > before_gold:
-                        map_state["monster_alive"] = False
+                        # mark the pending monster as dead in the persistent monsters list
+                        pending_mon = map_state.get("pending_monster")
+                        if pending_mon and map_state.get("monsters"):
+                            # find monster by matching pos and name
+                            for m in map_state["monsters"]:
+                                if m.get("pos") == pending_mon.get("pos") and m.get("name") == pending_mon.get("name"):
+                                    m["alive"] = False
+                                    break
+                    # regardless, remove pending_monster from map_state
+                    if "pending_monster" in map_state:
+                        del map_state["pending_monster"]
+
                     # after combat return to same place on map
                     if hp <= 0:
                         return

@@ -1,4 +1,4 @@
-# gamefunctions.py by Antonio Rojo (modified to add WanderingMonster support)
+# gamefunctions.py by Antonio Rojo
 
 """
 Adventure module utilities.
@@ -316,7 +316,7 @@ def _spawn_two_monsters(player_pos, town_pos, existing_positions=None):
         wm = WanderingMonster(x, y)
         monsters.append(wm)
         existing_positions.add((x, y))
-    # fallback: if we couldn't find distinct places, place deterministically
+    # fallback: can't find distinct places, place deterministically
     while len(monsters) < 2:
         x = (player_pos[0] + len(monsters) + 2) % GRID_SIZE
         y = (player_pos[1] + len(monsters) + 2) % GRID_SIZE
@@ -326,7 +326,6 @@ def _spawn_two_monsters(player_pos, town_pos, existing_positions=None):
 
 
 def run_map(map_state):
-    """Pygame map loop: now supports multiple persistent wandering monsters stored in map_state['monsters']."""
     pygame.init()
     screen = pygame.display.set_mode(WINDOW_SIZE)
     pygame.display.set_caption("World Map")
@@ -393,7 +392,7 @@ def run_map(map_state):
                             running = False
                             break
 
-                        # otherwise, player moved successfully; increment move counter and possibly move monsters
+                        # otherwise, player moved successfully, increment move counter and possibly move monsters
                         player_moves += 1
                         if player_moves % 2 == 0:
                             # collect occupied positions to avoid monsters stacking on each other or on town
@@ -413,7 +412,7 @@ def run_map(map_state):
                                 # re-add to occupied so others won't collide
                                 occupied.add((m.x, m.y))
 
-                            # if any monster moved onto the player, initiate combat next loop iteration:
+                            # if any monster moved onto the player, initiate combat next loop
                             for m in monsters:
                                 if m.alive and [m.x, m.y] == [player_x, player_y]:
                                     map_state["pending_monster"] = m.to_dict()
@@ -446,13 +445,13 @@ def run_map(map_state):
                 any_alive = True
                 monster_rect = pygame.Rect(m.x * CELL_SIZE, m.y *
                                            CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                # color stored as tuple, pygame wants tuple
+                # color stored as tuple
                 pygame.draw.circle(screen, tuple(m.color),
                                    monster_rect.center, CELL_SIZE // 3)
 
         # respawn two monsters if none are alive
         if not any_alive:
-            # spawn two new monsters, ensure they don't appear on player or town
+            # spawn two new monsters
             monsters = _spawn_two_monsters(
                 [player_x, player_y], [town_x, town_y])
 
@@ -470,7 +469,7 @@ def run_map(map_state):
     map_state["player_pos"] = [player_x, player_y]
     map_state["town_pos"] = [town_x, town_y]
     map_state["monsters"] = [m.to_dict() for m in monsters]
-    # pending_monster may hold the one the player walked into (as dict) - keep it for the caller
+    # pending_monster may hold the one the player walked into
     # map_state["pending_monster"] is set earlier when stepping on a monster
 
     return result, map_state

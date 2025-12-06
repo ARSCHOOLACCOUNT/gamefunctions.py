@@ -13,37 +13,38 @@ from gamefunctions import (
 
 import json
 import os
-
+import random  # Added for respawning logic
 
 SAVE_FILE = "savefile.json"
 
 
 def create_default_map_state():
-    # default map data
+    # default map data: single monster on the map
     return {
         "player_pos": [0, 0],
         "town_pos": [0, 0],
-        # legacy single-monster keys are replaced by 'monsters' list persisted by run_map
-        # keep a placeholder to avoid errors loading older saves
-        "monsters": None,
+        "monster_pos": [5, 5],
         "monster_alive": True,
     }
 
 
 def save_game(money, hp, inventory, map_state):
-    """Save player data to a JSON file."""
+    # save player data to a JSON file
     with open(SAVE_FILE, "w") as f:
-        json.dump({
-            "money": money,
-            "hp": hp,
-            "inventory": inventory,
-            "map_state": map_state,
-        }, f)
+        json.dump(
+            {
+                "money": money,
+                "hp": hp,
+                "inventory": inventory,
+                "map_state": map_state,
+            },
+            f,
+        )
     print("\nGame saved.\n")
 
 
 def load_game():
-    """Load player data from JSON if it exists."""
+    # load player data from JSON if it exists
     if not os.path.exists(SAVE_FILE):
         print("\nNo saved game found.\n")
         return None
@@ -92,11 +93,13 @@ def main():
     stone_price = 30.00
 
     # show shop items
-    print_full_shop_menu([
-        {"name": "Health Potion", "price": health_price},
-        {"name": "Sword", "price": sword_price},
-        {"name": "Magic Stone", "price": stone_price},
-    ])
+    print_full_shop_menu(
+        [
+            {"name": "Health Potion", "price": health_price},
+            {"name": "Sword", "price": sword_price},
+            {"name": "Magic Stone", "price": stone_price},
+        ]
+    )
 
     def buy_item(name, price, item_data_template):
         # helper for purchasing items
@@ -112,12 +115,30 @@ def main():
     def shop():
         # display shop and handle buying
         print(f"\nCurrent Gold: {money:.2f}")
-        buy_item("Health Potion", health_price, {
-                 "name": "health potion", "type": "usable"})
-        buy_item("Sword", sword_price, {
-                 "name": "sword", "type": "weapon", "maxDurability": 10, "currentDurability": 10})
-        buy_item("Magic Stone", stone_price, {
-                 "name": "magic stone", "type": "consumable", "note": "Defeats monster instantly"})
+        buy_item(
+            "Health Potion",
+            health_price,
+            {"name": "health potion", "type": "usable"},
+        )
+        buy_item(
+            "Sword",
+            sword_price,
+            {
+                "name": "sword",
+                "type": "weapon",
+                "maxDurability": 10,
+                "currentDurability": 10,
+            },
+        )
+        buy_item(
+            "Magic Stone",
+            stone_price,
+            {
+                "name": "magic stone",
+                "type": "consumable",
+                "note": "Defeats monster instantly",
+            },
+        )
         print(f"\nGold left: {money:.2f}\n")
 
     shop()
@@ -130,7 +151,12 @@ def main():
         print("You are in town.")
         print(f"Current HP: {hp}, Current Gold: {money:.0f}")
         print("What would you like to do?")
-        print("  1) Leave town (Explore Map)\n  2) Sleep (Restore HP for 5 Gold)\n  3) Shop\n  4) Save and Quit")
+        print(
+            "  1) Leave town (Explore Map)\n"
+            "  2) Sleep (Restore HP for 5 Gold)\n"
+            "  3) Shop\n"
+            "  4) Save and Quit"
+        )
         choice = read_menu_choice({"1", "2", "3", "4"})
 
         if choice == "1":
@@ -138,36 +164,35 @@ def main():
             while True:
                 action, map_state = run_map(map_state)
 
-                if action == "monster":
-                    # run_map stores the exact monster dict under map_state["pending_monster"]
-                    pending = map_state.get("pending_monster")
-                    monster_for_fight = pending if pending else new_random_monster()
-
+                if action == "monster" and map_state.get("monster_alive", True):
                     before_gold = money
                     hp, money = fight_monster(
-                        hp, money, monster_for_fight, inventory, equipped_weapon
+                        hp,
+                        money,
+                        new_random_monster(),
+                        inventory,
+                        equipped_weapon,
                     )
 
-                    # if we gained gold, assume the monster was defeated and mark it dead in the map_state
+                    # if we gained gold, the monster was defeated
                     if money > before_gold:
-                        # mark the pending monster as dead in the persistent monsters list
-                        pending_mon = map_state.get("pending_monster")
-                        if pending_mon and map_state.get("monsters"):
-                            # find monster by matching pos and name
-                            for m in map_state["monsters"]:
-                                if m.get("pos") == pending_mon.get("pos") and m.get("name") == pending_mon.get("name"):
-                                    m["alive"] = False
-                                    break
-                    # regardless, remove pending_monster from map_state
-                    if "pending_monster" in map_state:
-                        del map_state["pending_monster"]
+                        print(
+                            "The monster was defeated! A new one appears elsewhere.")
+                        map_state["monster_alive"] = True
+                        # Respawn logic: Generate random coordinates (0 to 9)
+                        map_state["monster_pos"] = [
+                            random.randint(0, 9),
+                            random.randint(0, 9),
+                        ]
 
-                    # after combat return to same place on map
+                    # if we died, end the game
                     if hp <= 0:
                         return
+
+                    # otherwise, go back to the map at the same position
                     continue
                 else:
-                    # returned to town or just closed map
+                    # returned to town or closed the map window
                     break
 
         elif choice == "2":

@@ -6,6 +6,7 @@ Adventure module utilities.
 Provides small helper functions for a simple text adventure:
 - print_welcome
 - print_shop_menu
+- print_full_shop_menu
 - purchase_item
 - new_random_monster
 - run_map
@@ -24,13 +25,13 @@ WINDOW_SIZE = (GRID_SIZE * CELL_SIZE, GRID_SIZE * CELL_SIZE)
 
 
 def print_welcome(name, width):
-    """Print a centered welcome message."""
+    # print a centered welcome message
     message = f"Hello, {name}!"
     print(message.center(width))
 
 
 def print_shop_menu(itemName, itemPrice, item2Name, item2Price):
-    """Display a simple two-item shop menu with prices."""
+    # legacy item menu that i decided to keep for compatibility, not being used in the main game
     print("/------------------------\\")
     if itemName:
         price1_str = f"{itemPrice:.2f}"
@@ -43,16 +44,20 @@ def print_shop_menu(itemName, itemPrice, item2Name, item2Price):
     print("\\------------------------/")
 
 
-def print_full_shop_menu(items):
-    """Print all available shop items with names and prices."""
+def print_full_shop_menu(items, player_level=1):
+    # small helper for quickly listing shop items with level locks
     print("Shop Items:")
     for item in items:
-        print(f"{item['name']} - {item['price']:.2f} Gold")
+        min_level = item.get("min_level", 1)
+        lock_note = ""
+        if player_level < min_level:
+            lock_note = f" (Requires level {min_level})"
+        print(f"{item['name']} - {item['price']:.2f} Gold{lock_note}")
     print()
 
 
 def purchase_item(itemPrice, startingMoney, quantityToPurchase=1):
-    """Calculate how many items can be bought and money left over."""
+    # Calculate how many items can be bought and money left over
     if itemPrice <= 0:
         return 0, startingMoney
     max_affordable = int(startingMoney / itemPrice)
@@ -61,8 +66,8 @@ def purchase_item(itemPrice, startingMoney, quantityToPurchase=1):
     return num_purchased, startingMoney - cost
 
 
-def new_random_monster():
-    """Create a random monster with simple stats."""
+def new_random_monster(player_level=1):
+    # create a random monster with stats that scale with player level
     monster_types = [
         {
             "name": "Goblin",
@@ -70,6 +75,7 @@ def new_random_monster():
             "health_range": (15, 30),
             "power_range": (5, 10),
             "money_range": (10, 50),
+            "base_xp": 5,
         },
         {
             "name": "Orc",
@@ -77,6 +83,7 @@ def new_random_monster():
             "health_range": (50, 80),
             "power_range": (10, 20),
             "money_range": (40, 120),
+            "base_xp": 10,
         },
         {
             "name": "Vulture",
@@ -84,20 +91,35 @@ def new_random_monster():
             "health_range": (10, 20),
             "power_range": (5, 15),
             "money_range": (5, 25),
+            "base_xp": 7,
         },
     ]
     template = random.choice(monster_types)
+
+    # scale stats with player level (clamped so it doesn't explode)
+    level_multiplier = 1.0 + 0.25 * (player_level - 1)
+    level_multiplier = max(1.0, min(level_multiplier, 3.0))
+
+    health = int(random.randint(*template["health_range"]) * level_multiplier)
+    power = int(random.randint(*template["power_range"]) * level_multiplier)
+    money = int(
+        random.randint(*template["money_range"])
+        * (1.0 + 0.10 * (player_level - 1))
+    )
+    xp_reward = int(template["base_xp"] * level_multiplier)
+
     return {
         "name": template["name"],
         "description": template["description"],
-        "health": random.randint(*template["health_range"]),
-        "power": random.randint(*template["power_range"]),
-        "money": random.randint(*template["money_range"]),
+        "health": max(1, health),
+        "power": max(1, power),
+        "money": max(0, money),
+        "xp": max(1, xp_reward),
     }
 
 
 def read_menu_choice(valid_choices):
-    """Prompt until the user enters one of the provided valid choices."""
+    # prompt until the user enters one of the provided valid choices.
     while True:
         choice = input("> ").strip()
         if choice in valid_choices:
@@ -106,15 +128,20 @@ def read_menu_choice(valid_choices):
 
 
 def display_fight_stats(player_hp, monster):
-    """Pretty-print player/monster combat state."""
-    print("\n-- Combat --")
+    """player/monster combat state with a simple banner."""
+    width = 40
+    name = monster.get("name", "Monster")
+    print("\n" + "=" * width)
+    print(f" ENCOUNTER: {name} ".center(width, "="))
+    print("=" * width)
     print(f"Your HP: {player_hp}")
-    print(f"{monster['name']} HP: {monster.get('health', 0)}")
-    print(f"Power: {monster.get('power', 0)}")
+    print(f"{name} HP: {monster.get('health', 0)}")
+    print(f"{name} Power: {monster.get('power', 0)}")
+    print("-" * width)
 
 
 def choose_equipped_weapon(inventory):
-    """Allow the player to choose a weapon from their inventory."""
+    """Allow  player to choose a weapon from their inventory."""
     weapons = [item for item in inventory if item.get("type") == "weapon"]
     if not weapons:
         print("No weapons to equip.")
@@ -134,30 +161,36 @@ def choose_equipped_weapon(inventory):
 
 
 def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weapon=None):
-    """Run a combat encounter between the player and one monster."""
+    """Run a combat encounter between the player and one monster.
+
+    Returns player_hp, player_gold, outcome
+    outcome is one of: "won", "fled", "died"
+    """
     if inventory is None:
         inventory = []
 
-    m_hp = int(monster.get("health", 1))
+    # Ensure health is an int on the monster dict
+    monster["health"] = int(monster.get("health", 1))
     m_pow = int(monster.get("power", 1))
     m_name = monster.get("name", "Monster")
     m_money = int(monster.get("money", 0))
 
     print(f"\nA monster approaches!\n\n{monster.get('description', '')}")
-    while player_hp > 0 and m_hp > 0:
+    while player_hp > 0 and monster["health"] > 0:
         display_fight_stats(player_hp, monster)
 
-        print("Choose an action:")
+        print("Actions:")
         print("  1) Attack")
         print("  2) Use Health Potion")
-        print("  3) Use Sword")
+        print("  3) Use Weapon")
         print("  4) Use Magic Stone")
         print("  5) Run")
+        print("Use the numbers on your keyboard to make a selection.")
         choice = read_menu_choice({"1", "2", "3", "4", "5"})
 
         if choice == "5":
             print("You flee back to town!\n")
-            return player_hp, player_gold
+            return player_hp, player_gold, "fled"
 
         elif choice == "2":
             # Use a potion if available
@@ -172,17 +205,20 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
             continue
 
         elif choice == "3":
-            # Use a sword if available and not broken
+            # Use a weapon if available and not broken
             for item in inventory:
                 if item.get("type") == "weapon" and item["currentDurability"] > 0:
                     item["currentDurability"] -= 1
+                    damage_bonus = int(item.get("damage_bonus", 2))
                     print(
-                        f"You swing your {item['name']}! (+2 damage, Durability: {item['currentDurability']}/{item['maxDurability']})"
+                        f"You swing your {item['name']}! (+"
+                        f"{damage_bonus} damage, Durability: "
+                        f"{item['currentDurability']}/{item['maxDurability']})"
                     )
-                    player_damage = random.randint(4, 8) + 2
+                    player_damage = random.randint(4, 8) + damage_bonus
                     break
             else:
-                print("You have no working sword! Default attack used.")
+                print("You have no working weapon! Default attack used.")
                 player_damage = random.randint(4, 8)
 
         elif choice == "4":
@@ -193,7 +229,7 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
                         "You used a Magic Stone! The monster is instantly defeated.\n"
                     )
                     inventory.remove(item)
-                    return player_hp, player_gold + m_money
+                    return player_hp, player_gold + m_money, "won"
             else:
                 print("No Magic Stones in inventory!\n")
             continue
@@ -203,24 +239,26 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
             player_damage = random.randint(4, 8)
 
         # Exchange of damage
-        m_hp -= player_damage
+        monster["health"] = max(0, monster["health"] - player_damage)
         print(f"You strike the {m_name} for {player_damage} damage.")
-        if m_hp <= 0:
+        if monster["health"] <= 0:
             print(f"\nThe {m_name} is defeated! You loot {m_money} gold.\n")
-            return player_hp, player_gold + m_money
+            return player_hp, player_gold + m_money, "won"
 
         monster_damage = random.randint(1, max(1, m_pow))
         player_hp -= monster_damage
         print(f"The {m_name} hits you for {monster_damage} damage.\n")
         if player_hp <= 0:
             print("You collapse... You wake up in town with 1 HP and no new gold.\n")
-            return 1, player_gold
+            return 1, player_gold, "died"
 
-    return player_hp, player_gold
+    # fallback in case the loop exits unexpectedly
+    outcome = "won" if monster["health"] <= 0 else "fled"
+    return player_hp, player_gold, outcome
 
 
 def run_map(map_state):
-    """Show the world map and move the player around.
+    """show the world map and move the player around.
 
     Loads player/monster images from files. If the files are missing,
     falls back to simple shapes (rectangle / circle).
@@ -230,9 +268,7 @@ def run_map(map_state):
     pygame.display.set_caption("World Map")
     clock = pygame.time.Clock()
 
-    # --- try to load images, with exception handling ---
-
-    # player: keep a right-facing and left-facing version
+    # player, keep a right facing and left facing version
     player_image_right = None
     player_image_left = None
     try:
@@ -251,14 +287,38 @@ def run_map(map_state):
     except (pygame.error, FileNotFoundError):
         print("Warning: could not load images/monster.png, using red circle.")
 
-    # current player image (start facing right)
+    # current player image, start facing right
     current_player_image = player_image_right
 
-    # --- map state setup ---
+    # map state setup
     player_x, player_y = map_state.get("player_pos", [0, 0])
     town_x, town_y = map_state.get("town_pos", [0, 0])
     monster_x, monster_y = map_state.get("monster_pos", [5, 5])
     monster_alive = map_state.get("monster_alive", True)
+
+    # 2D list of tile "grass", "tree", "mountain", "town"
+    terrain = map_state.get("terrain")
+    if terrain is None:
+        terrain = []
+        for y in range(GRID_SIZE):
+            row = []
+            for x in range(GRID_SIZE):
+                if [x, y] == [town_x, town_y]:
+                    tile = "town"
+                elif [x, y] == [monster_x, monster_y]:
+                    # ensure starting monster tile is walkable
+                    tile = "grass"
+                else:
+                    r = random.random()
+                    if r < 0.10:
+                        tile = "mountain"
+                    elif r < 0.25:
+                        tile = "tree"
+                    else:
+                        tile = "grass"
+                row.append(tile)
+            terrain.append(row)
+        map_state["terrain"] = terrain
 
     result = None
     running = True
@@ -283,22 +343,27 @@ def run_map(map_state):
                     if player_image_right is not None:
                         current_player_image = player_image_right
 
-                # --- MOVEMENT LOGIC (Turn Based) ---
+                # movement logic
                 if dx or dy:
-                    # 1. Move Player
+                    # Move Player
                     new_x = player_x + dx
                     new_y = player_y + dy
                     if 0 <= new_x < GRID_SIZE and 0 <= new_y < GRID_SIZE:
-                        player_x, player_y = new_x, new_y
+                        # cannot walk onto mountains
+                        if terrain[new_y][new_x] != "mountain":
+                            player_x, player_y = new_x, new_y
 
-                        if [player_x, player_y] == [town_x, town_y]:
-                            result = "town"
-                            running = False
-                        elif monster_alive and [player_x, player_y] == [monster_x, monster_y]:
-                            result = "monster"
-                            running = False
+                            if [player_x, player_y] == [town_x, town_y]:
+                                result = "town"
+                                running = False
+                            elif (
+                                monster_alive
+                                and [player_x, player_y] == [monster_x, monster_y]
+                            ):
+                                result = "monster"
+                                running = False
 
-                    # 2. Move Monster (Only if player moved and game is still running)
+                    # move Monster
                     if running and monster_alive:
                         step_dx, step_dy = random.choice(
                             [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -307,24 +372,66 @@ def run_map(map_state):
                         new_my = monster_y + step_dy
 
                         if 0 <= new_mx < GRID_SIZE and 0 <= new_my < GRID_SIZE:
-                            # Monster cannot enter town
-                            if [new_mx, new_my] != [town_x, town_y]:
+                            # monster cannot enter town or mountains
+                            if (
+                                [new_mx, new_my] != [town_x, town_y]
+                                and terrain[new_my][new_mx] != "mountain"
+                            ):
                                 monster_x, monster_y = new_mx, new_my
 
-                        # Check collision AGAIN (if monster walked into player)
+                        # check collision AGAIN if monster walked into player
                         if [player_x, player_y] == [monster_x, monster_y]:
                             result = "monster"
                             running = False
 
         # draw everything
         screen.fill((0, 0, 0))
+
         for y in range(GRID_SIZE):
             for x in range(GRID_SIZE):
-                rect = pygame.Rect(x * CELL_SIZE, y *
-                                   CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                pygame.draw.rect(screen, (50, 50, 50), rect, 1)
+                rect = pygame.Rect(
+                    x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE
+                )
+                tile = terrain[y][x]
 
-        # town
+                # base terrain color
+                if tile in ("grass", "town"):
+                    pygame.draw.rect(screen, (16, 90, 16), rect)
+                elif tile == "tree":
+                    pygame.draw.rect(screen, (10, 60, 10), rect)
+                elif tile == "mountain":
+                    pygame.draw.rect(screen, (70, 70, 70), rect)
+
+                # extra detail for trees
+                if tile == "tree":
+                    trunk = pygame.Rect(
+                        rect.centerx - CELL_SIZE // 12,
+                        rect.bottom - CELL_SIZE // 3,
+                        CELL_SIZE // 6,
+                        CELL_SIZE // 3,
+                    )
+                    pygame.draw.rect(screen, (80, 40, 10), trunk)
+                    pygame.draw.circle(
+                        screen,
+                        (20, 120, 20),
+                        (rect.centerx, rect.centery - CELL_SIZE // 6),
+                        CELL_SIZE // 3,
+                    )
+
+                # extra detail for mountains
+                if tile == "mountain":
+                    peak = [
+                        (rect.centerx, rect.top + CELL_SIZE // 6),
+                        (rect.left + CELL_SIZE // 6, rect.bottom - CELL_SIZE // 6),
+                        (rect.right - CELL_SIZE // 6,
+                         rect.bottom - CELL_SIZE // 6),
+                    ]
+                    pygame.draw.polygon(screen, (120, 120, 120), peak)
+
+                # grid lines
+                pygame.draw.rect(screen, (40, 40, 40), rect, 1)
+
+        # town marker
         town_rect = pygame.Rect(
             town_x * CELL_SIZE, town_y * CELL_SIZE, CELL_SIZE, CELL_SIZE
         )
@@ -342,8 +449,9 @@ def run_map(map_state):
                 monster_rect = pygame.Rect(
                     monster_x * CELL_SIZE, monster_y * CELL_SIZE, CELL_SIZE, CELL_SIZE
                 )
-                pygame.draw.circle(screen, (255, 0, 0),
-                                   monster_rect.center, CELL_SIZE // 3)
+                pygame.draw.circle(
+                    screen, (255, 0, 0), monster_rect.center, CELL_SIZE // 3
+                )
 
         # player
         if current_player_image is not None:
@@ -360,10 +468,11 @@ def run_map(map_state):
 
     pygame.quit()
 
-    # Update map state before returning
+    # update map state before returning
     map_state["player_pos"] = [player_x, player_y]
     map_state["town_pos"] = [town_x, town_y]
     map_state["monster_pos"] = [monster_x, monster_y]
     map_state["monster_alive"] = monster_alive
+    map_state["terrain"] = terrain
 
     return result, map_state

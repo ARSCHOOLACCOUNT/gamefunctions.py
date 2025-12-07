@@ -13,7 +13,7 @@ from gamefunctions import (
 
 import json
 import os
-import random  # Added for respawning logic
+import random  # for monster respawn positions
 
 SAVE_FILE = "savefile.json"
 
@@ -28,7 +28,12 @@ def create_default_map_state():
     }
 
 
-def save_game(money, hp, inventory, map_state):
+def xp_for_next_level(level):
+    # simple increasing XP curve
+    return 10 + (level - 1) * 5
+
+
+def save_game(money, hp, inventory, map_state, xp, level):
     # save player data to a JSON file
     with open(SAVE_FILE, "w") as f:
         json.dump(
@@ -37,6 +42,8 @@ def save_game(money, hp, inventory, map_state):
                 "hp": hp,
                 "inventory": inventory,
                 "map_state": map_state,
+                "xp": xp,
+                "level": level,
             },
             f,
         )
@@ -56,11 +63,15 @@ def load_game():
 
 def main():
     # intro
-    print("Welcome to my cool awesome game.\n")
+    print("=" * 50)
+    print(" WELCOME TO MY COOL AWESOME GAME ".center(50, "="))
+    print("=" * 50 + "\n")
 
     # Load or start new
-    print("1) Start New Game\n2) Load Saved Game")
-    choice = input("> ").strip()
+    print("1) Start New Game")
+    print("2) Load Saved Game")
+    print("Use the numbers on your keyboard to make a selection.")
+    choice = read_menu_choice({"1", "2"})
 
     if choice == "2":
         data = load_game()
@@ -69,11 +80,15 @@ def main():
             hp = data.get("hp", 30)
             inventory = data.get("inventory", [])
             map_state = data.get("map_state") or create_default_map_state()
+            xp = data.get("xp", 0)
+            level = data.get("level", 1)
         else:
             money = 0.0
             hp = 30
             inventory = []
             map_state = create_default_map_state()
+            xp = 0
+            level = 1
     else:
         name = input("What is your name? ")
         print()
@@ -86,61 +101,117 @@ def main():
         inventory = []
         hp = 30
         map_state = create_default_map_state()
+        xp = 0
+        level = 1
 
     # item prices
     health_price = 12.00
     sword_price = 20.00
+    greatsword_price = 45.00
     stone_price = 30.00
 
-    # show shop items
-    print_full_shop_menu(
-        [
-            {"name": "Health Potion", "price": health_price},
-            {"name": "Sword", "price": sword_price},
-            {"name": "Magic Stone", "price": stone_price},
-        ]
-    )
-
-    def buy_item(name, price, item_data_template):
-        # helper for purchasing items
-        nonlocal money
-        try:
-            qty = int(input(f"How many {name}s do you want to buy? "))
-        except ValueError:
-            qty = 0
-        bought, money = purchase_item(price, money, qty)
-        for _ in range(bought):
-            inventory.append(item_data_template.copy())
-
-    def shop():
-        # display shop and handle buying
-        print(f"\nCurrent Gold: {money:.2f}")
-        buy_item(
-            "Health Potion",
-            health_price,
-            {"name": "health potion", "type": "usable"},
-        )
-        buy_item(
-            "Sword",
-            sword_price,
-            {
+    # shop item list used for display and purchase
+    shop_items_for_display = [
+        {
+            "name": "Health Potion",
+            "price": health_price,
+            "min_level": 1,
+            "template": {"name": "health potion", "type": "usable"},
+        },
+        {
+            "name": "Sword",
+            "price": sword_price,
+            "min_level": 1,
+            "template": {
                 "name": "sword",
                 "type": "weapon",
                 "maxDurability": 10,
                 "currentDurability": 10,
+                "damage_bonus": 2,
             },
-        )
-        buy_item(
-            "Magic Stone",
-            stone_price,
-            {
+        },
+        {
+            "name": "Magic Stone",
+            "price": stone_price,
+            "min_level": 2,
+            "template": {
                 "name": "magic stone",
                 "type": "consumable",
                 "note": "Defeats monster instantly",
             },
-        )
-        print(f"\nGold left: {money:.2f}\n")
+        },
+        {
+            "name": "Greatsword",
+            "price": greatsword_price,
+            "min_level": 3,
+            "template": {
+                "name": "greatsword",
+                "type": "weapon",
+                "maxDurability": 8,
+                "currentDurability": 8,
+                "damage_bonus": 4,
+            },
+        },
+    ]
 
+    # initial preview of shop inventory with level locks
+    print_full_shop_menu(shop_items_for_display, level)
+
+    def shop():
+        nonlocal money
+        # number-based shop; one purchase per selection
+        while True:
+            print("\n" + "=" * 50)
+            print(" SHOP ".center(50, "="))
+            print("=" * 50)
+            print(f"Level {level} | Gold: {money:.2f}")
+            print("SHOP (sorted by lowest to highest gold price)\n")
+
+            sorted_items = sorted(
+                shop_items_for_display, key=lambda item: item["price"]
+            )
+            for idx, item in enumerate(sorted_items, start=1):
+                lock_text = ""
+                if level < item["min_level"]:
+                    lock_text = f" [LOCKED: Lv {item['min_level']}]"
+                print(
+                    f"{idx}. {item['name']} - {item['price']:.2f} Gold{lock_text}"
+                )
+            print("0. Exit shop")
+            print("\nUse the numbers on your keyboard to make a selection.")
+
+            choice_str = input("> ").strip()
+            if not choice_str.isdigit():
+                print("Please enter a number.\n")
+                continue
+
+            choice_num = int(choice_str)
+            if choice_num == 0:
+                print("You leave the shop.\n")
+                break
+            if not (1 <= choice_num <= len(sorted_items)):
+                print("Invalid selection.\n")
+                continue
+
+            selected = sorted_items[choice_num - 1]
+            if level < selected["min_level"]:
+                print(
+                    f"You must be at least level {selected['min_level']} "
+                    f"to buy {selected['name']}.\n"
+                )
+                continue
+            if money < selected["price"]:
+                print("You do not have enough gold for that.\n")
+                continue
+
+            money -= selected["price"]
+            inventory.append(selected["template"].copy())
+            print(
+                f"You purchased 1 {selected['name']}. "
+                f"Remaining gold: {money:.2f}\n"
+            )
+
+    # open the shop once at game start
     shop()
 
     # main game loop
@@ -148,51 +219,84 @@ def main():
     equipped_weapon = None
 
     while True:
-        print("You are in town.")
-        print(f"Current HP: {hp}, Current Gold: {money:.0f}")
-        print("What would you like to do?")
+        print("\n" + "=" * 50)
+        print(" TOWN ".center(50, "="))
+        print("=" * 50)
         print(
-            "  1) Leave town (Explore Map)\n"
-            "  2) Sleep (Restore HP for 5 Gold)\n"
-            "  3) Shop\n"
-            "  4) Save and Quit"
+            f"Level: {level} | XP: {xp}/{xp_for_next_level(level)} | "
+            f"HP: {hp}/{max_hp} | Gold: {money:.0f}"
         )
+        print("-" * 50)
+        print("1) Leave town (Explore Map)")
+        print("2) Sleep at the inn (Restore HP for 5 Gold)")
+        print("3) Visit the shop")
+        print("4) Save and Quit")
+        print("Use the numbers on your keyboard to make a selection.")
         choice = read_menu_choice({"1", "2", "3", "4"})
 
         if choice == "1":
             equipped_weapon = choose_equipped_weapon(inventory)
             while True:
+                # launch overworld map (pygame window)
                 action, map_state = run_map(map_state)
 
+                # if we collided with the monster
                 if action == "monster" and map_state.get("monster_alive", True):
-                    before_gold = money
-                    hp, money = fight_monster(
+                    monster = new_random_monster(level)
+
+                    # run a combat encounter (text-based)
+                    hp, money, outcome = fight_monster(
                         hp,
                         money,
-                        new_random_monster(),
+                        monster,
                         inventory,
                         equipped_weapon,
                     )
 
-                    # if we gained gold, the monster was defeated
-                    if money > before_gold:
+                    if outcome == "won":
+                        # award XP for defeating monster
+                        xp_gain = int(monster.get("xp", 0))
+                        if xp_gain > 0:
+                            print(f"You gained {xp_gain} XP!")
+                            xp += xp_gain
+
+                            # handle level-ups
+                            leveled_up = False
+                            while xp >= xp_for_next_level(level):
+                                xp -= xp_for_next_level(level)
+                                level += 1
+                                leveled_up = True
+                                print(f"*** You reached Level {level}! ***")
+                            if leveled_up:
+                                print(
+                                    "Monsters feel more dangerous... "
+                                    "they will now be stronger.\n"
+                                )
+
+                        # monster defeated, spawn a new one elsewhere
                         print(
-                            "The monster was defeated! A new one appears elsewhere.")
+                            "The monster was defeated! A new one appears elsewhere."
+                        )
                         map_state["monster_alive"] = True
-                        # Respawn logic: Generate random coordinates (0 to 9)
                         map_state["monster_pos"] = [
                             random.randint(0, 9),
                             random.randint(0, 9),
                         ]
+                        # stay in explore loop, go back to map again
+                        continue
 
-                    # if we died, end the game
-                    if hp <= 0:
-                        return
+                    if outcome in ("fled", "died"):
+                        # return player to town tile
+                        town_pos = map_state.get("town_pos", [0, 0])
+                        map_state["player_pos"] = town_pos
+                        # hp already set by fight_monster (1 HP if died)
+                        break
 
-                    # otherwise, go back to the map at the same position
+                    # fallback
                     continue
+
                 else:
-                    # returned to town or closed the map window
+                    # action was "town" or window closed
                     break
 
         elif choice == "2":
@@ -207,7 +311,7 @@ def main():
         elif choice == "3":
             shop()
         else:
-            save_game(money, hp, inventory, map_state)
+            save_game(money, hp, inventory, map_state, xp, level)
             print("Thanks for playing!")
             break
 

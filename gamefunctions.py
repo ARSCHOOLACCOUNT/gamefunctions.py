@@ -96,7 +96,7 @@ def new_random_monster(player_level=1):
     ]
     template = random.choice(monster_types)
 
-    # scale stats with player level (clamped so it doesn't explode)
+    # scale stats with player level
     level_multiplier = 1.0 + 0.25 * (player_level - 1)
     level_multiplier = max(1.0, min(level_multiplier, 3.0))
 
@@ -119,7 +119,7 @@ def new_random_monster(player_level=1):
 
 
 def read_menu_choice(valid_choices):
-    # prompt until the user enters one of the provided valid choices.
+    # prompt until the user enters one of the provided valid choices
     while True:
         choice = input("> ").strip()
         if choice in valid_choices:
@@ -128,7 +128,7 @@ def read_menu_choice(valid_choices):
 
 
 def display_fight_stats(player_hp, monster):
-    """player/monster combat state with a simple banner."""
+    # player/monster combat state with a simple banner
     width = 40
     name = monster.get("name", "Monster")
     print("\n" + "=" * width)
@@ -141,7 +141,7 @@ def display_fight_stats(player_hp, monster):
 
 
 def choose_equipped_weapon(inventory):
-    """Allow  player to choose a weapon from their inventory."""
+    # Allow  player to choose a weapon from their inventory
     weapons = [item for item in inventory if item.get("type") == "weapon"]
     if not weapons:
         print("No weapons to equip.")
@@ -169,7 +169,7 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
     if inventory is None:
         inventory = []
 
-    # Ensure health is an int on the monster dict
+    # ensure health is an int on the monster dict
     monster["health"] = int(monster.get("health", 1))
     m_pow = int(monster.get("power", 1))
     m_name = monster.get("name", "Monster")
@@ -193,7 +193,7 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
             return player_hp, player_gold, "fled"
 
         elif choice == "2":
-            # Use a potion if available
+            # use a potion if available
             for item in inventory:
                 if item["name"] == "health potion":
                     player_hp = min(player_hp + 15, 30)
@@ -205,7 +205,7 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
             continue
 
         elif choice == "3":
-            # Use a weapon if available and not broken
+            # use a weapon if available and not broken
             for item in inventory:
                 if item.get("type") == "weapon" and item["currentDurability"] > 0:
                     item["currentDurability"] -= 1
@@ -222,7 +222,7 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
                 player_damage = random.randint(4, 8)
 
         elif choice == "4":
-            # Use a magic stone for instant victory
+            # use a magic stone for instant victory
             for item in inventory:
                 if item.get("name") == "magic stone":
                     print(
@@ -252,17 +252,13 @@ def fight_monster(player_hp, player_gold, monster, inventory=None, equipped_weap
             print("You collapse... You wake up in town with 1 HP and no new gold.\n")
             return 1, player_gold, "died"
 
-    # fallback in case the loop exits unexpectedly
+    # fallback
     outcome = "won" if monster["health"] <= 0 else "fled"
     return player_hp, player_gold, outcome
 
 
 def run_map(map_state):
-    """show the world map and move the player around.
-
-    Loads player/monster images from files. If the files are missing,
-    falls back to simple shapes (rectangle / circle).
-    """
+    # show the world map and move the player around.
     pygame.init()
     screen = pygame.display.set_mode(WINDOW_SIZE)
     pygame.display.set_caption("World Map")

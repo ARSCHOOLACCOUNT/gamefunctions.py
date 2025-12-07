@@ -1,0 +1,24 @@
+I came up with around 10 ideas, including things like adding NPCs and creating a quest system. But I got a late start on this project, and with the limited time I had, I decided to focus on QOL changes and some simple visual improvements.
+
+I narrowed my goals down to 3 objectives that I could complete in a short amount of time, those being: 
+
+1. Implement a very basic XP and leveling system for combat. Defeating monsters should unlock new gear and make enemies in the future more dangerous.
+2. Clean up the shop UI. Make it easier to use and quicker to buy items.
+3. Add simple visual upgrades to the map, as the black grid feels empty. I wanted to include some trees and mountains to give it more life.
+
+First, I built the XP and leveling system. My goal was to give the player a basic sense of progression (Kill monsters, get XP, level up, and unlock stronger weapons). I tried scaling the monster difficulty to match the player’s level.
+
+Next was the shop. I really didn’t like the old version. It asked how many of an item you wanted to buy and felt clunky. I replaced it with a numbered list sorted by price. Now, players can make a quick selection just by hitting a number key.
+
+Finally, I worked on the overworld visuals. The original grid was a good starting point, but it felt very empty. I recolored the tiles and added basic tree and mountain tiles to break it up. It’s still incredibly simple but way more visually interesting.
+
+At one point, I tried building a full-screen Pygame battle screen styled like an old school Pokémon fight, but it ended up eating a lot of my time. I watched a bunch of tutorials and couldn’t get it working the way I wanted, so I decided to drop it.
+
+What went well:
+Most changes dropped into the game without causing bugs. The XP system worked with minimal debugging. The UI changes didn’t break anything. Everything was modular enough that testing was fast and easy.
+
+What didn’t go well:
+The full screen combat interface was a mistake. It ate up a lot of time and didn’t work. I think it would've been a cool addition if I had more time to work on it.
+
+If I had more time:
+I’d expand the map size and add more variety. I'd definitely include some basic NPCs. I'd try to clean up the terminal output to look more polished. I would have also really liked to build a simple quest system.
